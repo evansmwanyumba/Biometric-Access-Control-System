@@ -1,4 +1,5 @@
 fastapi
+<<<<<<< HEAD
 uvicorn[standard]
 sqlalchemy
 pydantic
@@ -6,3 +7,10 @@ opencv-python
 face-recognition
 numpy
 python-multipart
+=======
+uvicorn
+sqlalchemy
+opencv-python
+numpy
+setuptools<82
+>>>>>>> 1af8d2fdc75cab145b7c871e97add616a83bf65d
