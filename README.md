@@ -73,7 +73,6 @@ pip install --break-system-packages -r requirements.txt
 These are not pulled in automatically via `requirements.txt` since they were built/installed manually for this environment:
 
 ```bash
-# dlib — build from source if a prebuilt wheel isn't available for your Python version
 git clone https://github.com/davisking/dlib.git
 cd dlib && python setup.py install && cd ..
 
