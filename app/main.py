@@ -218,6 +218,14 @@ async def enroll_biometrics(
     if not encodings:
         raise HTTPException(status_code=400, detail="No face detected in the uploaded image")
 
+    # Duplicate-face check: block enrolling the same face under a different student_id
+    duplicate_id = engine_instance.find_duplicate(encodings[0], exclude_student_id=student_id)
+    if duplicate_id:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This face appears to already be enrolled under student ID '{duplicate_id}'"
+        )
+
     embedding_bytes = encodings[0].astype(np.float64).tobytes()
     
     # Store embedding
