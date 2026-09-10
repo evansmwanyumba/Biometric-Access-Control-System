@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from .models import Student, FaceEmbedding, AccessLog
 from .liveness import liveness_detector
+from .crypto_utils import decrypt_bytes
 
 # --- Matching thresholds (face_recognition distance: lower = stricter match) ---
 # RECOGNITION_TOLERANCE: max distance to accept a live face as a known student at the gate.
@@ -46,7 +47,8 @@ class RecognitionEngine:
         
         embeddings = db.query(FaceEmbedding).all()
         for record in embeddings:
-            vector = np.frombuffer(record.embedding_blob, dtype=np.float64)
+            decrypted_blob = decrypt_bytes(record.embedding_blob)
+            vector = np.frombuffer(decrypted_blob, dtype=np.float64)
             self.known_encodings.append(vector)
             self.known_student_ids.append(record.student_id)
 

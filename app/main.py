@@ -17,6 +17,7 @@ import traceback
 from .database import engine, Base, get_db
 from .models import Student, FaceEmbedding, AccessLog, AdminUser
 from .services import engine_instance
+from .crypto_utils import encrypt_bytes
 from . import auth
 from .auth import require_role, get_current_admin, CurrentAdmin
 
@@ -227,9 +228,10 @@ async def enroll_biometrics(
         )
 
     embedding_bytes = encodings[0].astype(np.float64).tobytes()
-    
-    # Store embedding
-    face_record = FaceEmbedding(student_id=student_id, embedding_blob=embedding_bytes)
+    encrypted_embedding = encrypt_bytes(embedding_bytes)
+
+    # Store embedding (encrypted at rest)
+    face_record = FaceEmbedding(student_id=student_id, embedding_blob=encrypted_embedding)
     db.add(face_record)
     db.commit()
 

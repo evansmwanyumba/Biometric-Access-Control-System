@@ -10,3 +10,4 @@ python-multipart
 python-dotenv
 bcrypt<4.1
 slowapi
+cryptography
