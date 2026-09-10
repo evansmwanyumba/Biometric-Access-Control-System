@@ -4,3 +4,9 @@ sqlalchemy
 opencv-python
 numpy
 setuptools<82
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+python-dotenv
+bcrypt<4.1
+slowapi

@@ -34,3 +34,12 @@ class AccessLog(Base):
     confidence_distance = Column(Float, nullable=True)
 
     student = relationship("Student", back_populates="logs")
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    username = Column(String, unique=True, nullable=False, index=True)
+    hashed_password = Column(String, nullable=False)
+    role = Column(String, nullable=False)  # SUPER_ADMIN, ADMIN, SECURITY_OFFICER, GATE_DEVICE
+    is_active = Column(Integer, default=1)  # 1 = active, 0 = disabled
+    created_at = Column(DateTime, default=datetime.utcnow)
