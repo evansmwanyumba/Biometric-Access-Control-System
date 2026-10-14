@@ -2,14 +2,14 @@
 
 An automated facial recognition gate access control system built with FastAPI, `face_recognition` (dlib), and OpenCV.
 
-This repo currently contains the **backend prototype**, developed and tested locally on Kali Linux. The system is designed to be OS-independent in its final form — the backend exposes a REST API and camera stream over HTTP, and a **web-based frontend** (in progress, to be added to this repo) will be the primary interface, making the deployed system accessible from any device with a browser regardless of OS.
+The system includes a browser dashboard served at `http://127.0.0.1:8000/`, alongside its FastAPI API.
 
 ### Project roadmap
 
 ```text
 🔐 1. Backend security                          ✅ COMPLETE
   ├── Authentication (JWT)                      ✅
-  ├── RBAC / permissions (4 roles)               ✅
+  ├── RBAC / permissions (5 roles)               ✅
   ├── Input validation                          ✅
   ├── Secure enrollment                         ✅
   ├── API authorization                         ✅
@@ -25,15 +25,14 @@ This repo currently contains the **backend prototype**, developed and tested loc
 🗄️ 3. Database security                         🔶 IN PROGRESS
   ├── Constraints                               ✅
   ├── Proper relationships (FK + cascade rules) ✅
-  ├── Sensitive-data protection (encryption)    ⬜
+  ├── Sensitive-data protection (encryption)    ✅
   └── Audit integrity (tamper-resistant logs)   ⬜
 
-🌐 4. Frontend                                  ⬜ NOT STARTED
-  ├── Admin login
-  ├── Dashboard
-  ├── Student management
-  ├── Enrollment
-  └── Access logs
+🌐 4. Frontend                                  ✅ LOCAL DASHBOARD
+  ├── Admin login and role-based dashboard
+  ├── Camera feeds and RTSP setup
+  ├── Student management and enrollment
+  └── Access logs and administration
 
 🛡️ 5. Security testing                          ⬜ NOT STARTED
   ├── API attacks
@@ -50,7 +49,7 @@ Currently running locally against a laptop webcam purely for development and tes
 
 ## Features
 
-- JWT authentication with role-based access control (`SUPER_ADMIN`, `ADMIN`, `SECURITY_OFFICER`, `GATE_DEVICE`)
+- JWT authentication with role-based access control (`SUPER_ADMIN`, `ADMIN`, `SECURITY_OFFICER`, `GATE_PERSONNEL`, `GATE_DEVICE`)
 - Rate-limited login endpoint (brute-force protection)
 - Strict input validation on all admin endpoints (enums, length/format constraints, password strength)
 - Global exception handling — no internal details leaked to clients on unexpected errors
@@ -82,9 +81,10 @@ FacialRec/
 │   ├── auth.py            # JWT creation/validation, password hashing, role-checking dependency
 │   ├── database.py        # SQLAlchemy engine/session setup, SQLite FK enforcement
 │   ├── liveness.py         # Blink/EAR-based liveness detection
-│   ├── main.py             # FastAPI routes
+│   ├── main.py             # FastAPI routes and compatibility migrations
 │   ├── models.py           # ORM models (Student, FaceEmbedding, AccessLog, AdminUser)
-│   └── services.py         # Recognition engine, frame processing, caching
+│   ├── services.py         # Recognition engine, frame processing, caching
+│   └── static/              # Local dashboard assets
 ├── seed_admin.py           # One-time script to bootstrap the first SUPER_ADMIN account
 ├── migrate_db.py           # Schema migration helper (backs up + rebuilds local_gate.db)
 ├── requirements.txt
@@ -136,15 +136,17 @@ Create a `.env` file in the project root (never committed — already in `.gitig
 
 ```bash
 python3 -c "import secrets; print(secrets.token_hex(32))"
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
 ```
 SECRET_KEY=<paste the generated value here>
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
+ENCRYPTION_KEY=<paste the generated Fernet key here>
 ```
 
-`SECRET_KEY` signs every JWT this system issues — anyone with it could forge admin tokens. Keep it out of version control and treat it like any other production secret.
+`SECRET_KEY` signs every JWT this system issues — anyone with it could forge admin tokens. `ENCRYPTION_KEY` protects stored face embeddings and RTSP URLs; losing it makes those encrypted values unrecoverable. Keep both out of version control and treat them as production secrets.
 
 ### 6. Bootstrap your first admin account
 
@@ -164,17 +166,49 @@ uvicorn app.main:app --reload
 
 API docs available at `http://127.0.0.1:8000/docs`.
 
+### Dashboard and role permissions
+
+Visit `http://127.0.0.1:8000/` to sign in. Create the first `SUPER_ADMIN` using `python seed_admin.py`.
+
+| Role | Permissions |
+|---|---|
+| `SUPER_ADMIN` | Full system access, including account/camera/student/log management, audit history, and the full-system wipe |
+| `ADMIN` | Manage students and biometrics, camera lifecycle, view/delete access logs, and manage gate personnel/device accounts |
+| `SECURITY_OFFICER` | View access logs and camera feeds/status |
+| `GATE_PERSONNEL` | View logs and switch between camera feeds |
+| `GATE_DEVICE` | View and switch camera feeds only |
+
+Admins cannot create or delete admin accounts. Deleting the account currently signed in is blocked to prevent accidentally stranding the system. The full-system wipe is only available to super admins; it deletes all database rows, including every account, and requires typing `WIPE EVERYTHING`. Afterward, use `python seed_admin.py` to create a new super admin.
+
+RTSP cameras can be registered from **Cameras & status** by pasting the camera/NVR's RTSP URL. Camera URLs are encrypted in the database and are not returned by the API. Use the per-camera controls to start, stop, edit, or delete a stream; starting probes that the camera is reachable and producing frames. The laptop webcam is listed as the local test feed and can be controlled the same way.
+
+Admins and super admins can click any row in **Students** to inspect the record, biometric enrollment count, and recent access history, then modify or permanently delete it. **Activity history** records the actor, role, action, target, and safe details for account, student, camera, authentication, enrollment, feed, and access-log changes. Activity history is append-only in the dashboard; a full-system wipe deletes it together with every other database row.
+
+Every signed-in account has a **My account** page to change its own username, password, or both. The current password is required to confirm a change. Saving a change renews the current browser session and invalidates all previously issued tokens for that account, so other sessions must sign in again.
+
 ## API Overview
 
 | Method | Endpoint | Auth Required | Description |
 |---|---|---|---|
 | POST | `/api/admin/login` | None (rate-limited: 5/min) | Log in, returns a JWT |
-| POST | `/api/admin/users` | `SUPER_ADMIN` | Create a new admin/officer/device account |
+| PATCH | `/api/admin/account` | Any authenticated account | Change own username/password; invalidates prior sessions |
+| GET/POST | `/api/admin/users` | `SUPER_ADMIN`, `ADMIN` | List/create accounts; admins can manage gate accounts only |
+| DELETE | `/api/admin/users/{username}` | `SUPER_ADMIN`, `ADMIN` | Delete an account subject to role limits |
+| DELETE | `/api/admin/system/wipe?confirmation=WIPE%20EVERYTHING` | `SUPER_ADMIN` | Permanently clear every database table and account |
+| POST | `/api/admin/cameras` | `SUPER_ADMIN`, `ADMIN` | Register an encrypted RTSP camera URL |
+| PATCH/DELETE | `/api/admin/cameras/{camera_id}` | `SUPER_ADMIN`, `ADMIN` | Modify or delete a camera |
+| POST | `/api/admin/cameras/{camera_id}/start` | `SUPER_ADMIN`, `ADMIN` | Probe and start a camera |
+| POST | `/api/admin/cameras/{camera_id}/stop` | `SUPER_ADMIN`, `ADMIN` | Stop a camera and close its active feed streams |
+| POST | `/api/admin/cameras/{camera_id}/switch` | Authenticated camera roles | Select a camera |
+| GET | `/api/admin/activity` | `SUPER_ADMIN`, `ADMIN` | Read the append-only activity audit history |
+| GET/PATCH/DELETE | `/api/admin/students/{student_id}` | `SUPER_ADMIN`, `ADMIN` | Read, modify, or permanently delete one student record |
+| DELETE | `/api/admin/logs/{log_id}` | `SUPER_ADMIN`, `ADMIN` | Delete one access log |
+| DELETE | `/api/admin/logs` | `SUPER_ADMIN`, `ADMIN` | Delete all access logs |
 | POST | `/api/admin/students` | `ADMIN`, `SUPER_ADMIN` | Create a student record |
 | PATCH | `/api/admin/students/{student_id}` | `ADMIN`, `SUPER_ADMIN` | Update a student record |
 | POST | `/api/admin/enroll` | `ADMIN`, `SUPER_ADMIN` | Enroll biometrics (photo → face embedding) for a student |
-| GET | `/api/admin/logs` | `ADMIN`, `SUPER_ADMIN`, `SECURITY_OFFICER` | Retrieve recent access logs |
-| GET | `/api/gate/video-feed` | None (local network trust) | Live MJPEG stream with recognition + liveness overlay |
+| GET | `/api/admin/logs` | `ADMIN`, `SUPER_ADMIN`, `SECURITY_OFFICER`, `GATE_PERSONNEL` | Retrieve recent access logs |
+| GET | `/api/gate/video-feed` | Authenticated camera roles | Live webcam or registered RTSP MJPEG stream with recognition + liveness overlay |
 
 **Note:** `/api/gate/video-feed` is a continuous MJPEG stream and will not render properly in Swagger UI (`/docs`) — it waits indefinitely for a response that never completes. Test it with an `<img>` tag in an HTML page, or with `curl --output`.
 
@@ -188,19 +222,17 @@ API docs available at `http://127.0.0.1:8000/docs`.
 
 ## Data & Privacy
 
-- Face data is stored as numeric embeddings (vectors), not raw photos, once enrollment completes.
-- **Embeddings are currently stored unencrypted at rest** in SQLite — encryption of this column is a planned, not-yet-implemented item (see roadmap above).
+- Face data is stored as encrypted numeric embeddings (vectors), not raw photos, once enrollment completes. Registered RTSP URLs are encrypted as well.
 - The SQLite database (`*.db`), backup files, and any locally used test images are excluded from version control via `.gitignore`.
 - This system is intended for local, offline use during development. If deployed beyond a local/testing environment, review data retention, encryption, and consent practices for biometric data in your jurisdiction before production use.
 
 ## Known Limitations / To Do
 
-- Face embeddings are not yet encrypted at rest.
 - Access logs are not yet tamper-resistant at the database level (no DB-level protection against direct edit/delete, only application-level).
 - Liveness detection covers static-image spoofing, not video replay attacks.
 - Recognition runs on CPU (`hog` model); performance depends on hardware.
-- No web frontend yet — currently validated using a minimal local test page (`<img>` tag against the MJPEG feed). A full web-based gate display and admin dashboard are in progress and will be added to this repo.
-- Input is a local laptop webcam for now; production deployment will swap this for dedicated security camera feeds (e.g. RTSP streams).
+- Detection uses full-resolution frames and upsampling for smaller faces, which increases CPU cost. Software cannot replace appropriate CCTV resolution, optical zoom, mounting position, lighting, or a clear view of faces; validate recognition at the intended distance before relying on it for access decisions.
+- RTSP support depends on OpenCV's video backend and the camera/NVR's exact stream path and network configuration.
 - Not yet deployed to a server — currently local-only for development.
 - No formal security testing (penetration testing, auth bypass attempts) has been performed yet.
 

@@ -20,17 +20,11 @@ RECOGNITION_TOLERANCE = 0.5
 DUPLICATE_TOLERANCE = 0.4
 
 # --- Detection range tuning ---
-# DETECTION_SCALE: how much we shrink the frame before running face detection.
-#   Smaller = faster but loses detail on small/far-away faces.
-#   0.25 (old default) is aggressive and hurts far-range detection.
-#   0.5 keeps 4x more pixel area, meaningfully better range, still much
-#   faster than running on the full frame every time.
-DETECTION_SCALE = 0.5
+# Keep full frame detail for detecting smaller faces from higher-resolution
+# CCTV feeds. This costs more CPU than downscaling, especially on 4K streams.
+DETECTION_SCALE = 1.0
 
-# UPSAMPLE_TIMES: face_recognition's own upsampling — each increment roughly
-#   doubles detectable range for small/far faces, at a real speed cost.
-#   1 is a reasonable middle ground for a gate camera; raise if you need to
-#   catch subjects further away and can tolerate a slower feed.
+# Upsampling makes small faces easier to detect but is computationally costly.
 UPSAMPLE_TIMES = 1
 
 class RecognitionEngine:
@@ -51,6 +45,11 @@ class RecognitionEngine:
             vector = np.frombuffer(decrypted_blob, dtype=np.float64)
             self.known_encodings.append(vector)
             self.known_student_ids.append(record.student_id)
+
+    def clear_cache(self):
+        self.known_encodings.clear()
+        self.known_student_ids.clear()
+        self.last_log_times.clear()
 
     def process_frame(self, frame: np.ndarray, db: Session, tolerance: float = RECOGNITION_TOLERANCE):
         """Detects faces, matches vectors, checks status, and logs access."""

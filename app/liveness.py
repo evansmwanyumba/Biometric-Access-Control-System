@@ -93,5 +93,9 @@ class LivenessDetector:
         expiry = self._live_until.get(key)
         return expiry is not None and datetime.utcnow() < expiry
 
+    def reset(self) -> None:
+        self._closed_frame_counts.clear()
+        self._live_until.clear()
+
 
 liveness_detector = LivenessDetector()

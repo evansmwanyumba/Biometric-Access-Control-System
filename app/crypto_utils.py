@@ -23,3 +23,13 @@ def encrypt_bytes(data: bytes) -> bytes:
 def decrypt_bytes(token: bytes) -> bytes:
     """Decrypts bytes previously encrypted with encrypt_bytes()."""
     return _fernet.decrypt(token)
+
+
+def encrypt_text(data: str) -> bytes:
+    """Encrypts text such as a camera URL before it is stored."""
+    return encrypt_bytes(data.encode("utf-8"))
+
+
+def decrypt_text(token: bytes) -> str:
+    """Decrypts text previously encrypted with encrypt_text()."""
+    return decrypt_bytes(token).decode("utf-8")
